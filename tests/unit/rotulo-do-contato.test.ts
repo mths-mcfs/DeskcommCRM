@@ -157,6 +157,13 @@ describe("a sétima cópia não nasce", () => {
    * último caso), para não sobrar autorização em nome de código que sumiu.
    */
   const LEITURAS_LEGITIMAS: ReadonlyArray<{ arquivo: string; trecho: string; motivo: string }> = [
+    // ── canal UAZAPI: apelido da CONEXÃO, não nome de contato ───────────────
+    {
+      arquivo: "lib/channels/uazapi/ingest.ts",
+      trecho: 'sessao.display_name ?? sessao.phone_number ?? "sem nome",',
+      motivo:
+        "apelido da conexão (channel_sessions) para o aviso de saúde — a mesma cadeia de lib/channels/inbound.ts e lib/waha/ingest.ts no mesmo ponto",
+    },
     // ── prospecção (PR #963): nenhuma destas é nome de CONTATO ──────────────
     {
       arquivo: "app/app/prospecting/_client.tsx",
