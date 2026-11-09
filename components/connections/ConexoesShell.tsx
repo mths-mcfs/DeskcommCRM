@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { RedesSociaisClient } from "./RedesSociaisClient";
 import { CanalGraphParceiroClient } from "./CanalGraphParceiroClient";
+import { CanalInstanciaPropriaClient } from "./CanalInstanciaPropriaClient";
 import { CanalOficialClient } from "./CanalOficialClient";
 import { CanalParceiroClient } from "./CanalParceiroClient";
 import { CanalVozClient } from "./CanalVozClient";
@@ -42,6 +43,7 @@ export function ConexoesShell({
   wahaConfigured,
   wacallsConfigured,
   graphParceiro = null,
+  instanciaPropria = null,
 }: {
   wahaConfigured: boolean;
   wacallsConfigured: boolean;
@@ -52,6 +54,12 @@ export function ConexoesShell({
    * O rótulo vem do servidor porque a tela não pode nomear provider.
    */
   graphParceiro?: { label: string } | null;
+  /**
+   * Número por QR numa instância do PRÓPRIO cliente (o servidor dele). Sempre
+   * disponível; o rótulo vem do servidor pelo mesmo motivo do de cima. `null`
+   * só em quem monta a tela sem ele (testes).
+   */
+  instanciaPropria?: { label: string } | null;
 }) {
   const t = useT();
   const router = useRouter();
@@ -70,7 +78,9 @@ export function ConexoesShell({
             ? "voz"
             : abaParam === "graph" && graphParceiro
               ? "graph"
-              : "numeros";
+              : abaParam === "instancia" && instanciaPropria
+                ? "instancia"
+                : "numeros";
   const sub = params.get("sub") === "templates" ? "templates" : "conexao";
 
   const irPara = (proximaAba: string, proximaSub?: string): void => {
@@ -107,11 +117,18 @@ export function ConexoesShell({
         <TabsTrigger value="sociais">{t("Redes sociais")}</TabsTrigger>
         <TabsTrigger value="voz">{t("Chamada de voz")}</TabsTrigger>
         {graphParceiro && <TabsTrigger value="graph">{graphParceiro.label}</TabsTrigger>}
+        {instanciaPropria && <TabsTrigger value="instancia">{instanciaPropria.label}</TabsTrigger>}
       </TabsList>
 
       <TabsContent value="numeros" className="mt-0">
         <ConnectionsClient wahaConfigured={wahaConfigured} />
       </TabsContent>
+
+      {instanciaPropria && (
+        <TabsContent value="instancia" className="mt-0">
+          <CanalInstanciaPropriaClient />
+        </TabsContent>
+      )}
 
       <TabsContent value="telefonia" className="mt-0">
         <TelefoniaClient />

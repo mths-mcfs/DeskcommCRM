@@ -290,6 +290,16 @@ const schema = z.object({
   // é `canalGraphParceiroLigado()` em `lib/channels/graph-parceiro/credentials.ts`.
   DATAFY_ENABLED: z.string().optional().default(""),
 
+  // ─── Canal UAZAPI — só para TESTE LOCAL ───
+  //
+  // A URL do servidor que o admin cola na tela tem de ser `https` e não pode
+  // apontar para a rede interna (loopback, rede privada, link-local, metadata —
+  // também depois de resolver o DNS). `true` libera as DUAS coisas: `http` e
+  // host interno, para apontar para um servidor falso na máquina de quem
+  // desenvolve. Nunca ligue em produção. Vazio (o padrão) recusa as duas. Quem
+  // lê é `modoDeTesteLocal()` em `lib/channels/uazapi/credentials.ts`.
+  UAZAPI_ALLOW_INSECURE_HTTP: z.string().optional().default(""),
+
   // ─── Número oficial com um clique (migration 9093) — OPCIONAL ───
   //
   // Chave da conta do provedor parceiro DA INSTALAÇÃO. Vazia = a tela de

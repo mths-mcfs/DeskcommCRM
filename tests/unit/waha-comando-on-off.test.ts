@@ -285,6 +285,43 @@ describe("C-076 · o comando só VALE se o agente aceitar (config da UI)", () =>
     expect(contactUpdates.some((u) => "is_blocked" in u)).toBe(false);
   });
 
+  it("sessão de OUTRO número por QR: o comando é apagado pelo canal dela, não pelo WAHA", async () => {
+    const cap: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
+    const revogarNoCanal = vi.fn(async () => {});
+    await dispatchWahaEvent(
+      makeAdmin(cap, { aceitaComandos: true }),
+      { ...SESSION, waha_session_name: null, revogarNoCanal },
+      comando("#off"),
+      "req-off-outro-canal",
+    );
+
+    expect(revogarNoCanal).toHaveBeenCalledTimes(1);
+    expect(revogarNoCanal).toHaveBeenCalledWith({
+      chatId: "5511999999999@c.us",
+      messageId: expect.stringMatching(/^true_5511999999999@c\.us_off\d+$/),
+    });
+    expect(deleteMessage).not.toHaveBeenCalled();
+    // O efeito do comando não depende do apagamento.
+    expect(cap.conversationUpdates.some((u) => u.bot_silenced_until === "infinity")).toBe(true);
+  });
+
+  it("apagar pelo outro canal falhou: a ingestão segue e deixa log", async () => {
+    const cap: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
+    const revogarNoCanal = vi.fn(async () => {
+      throw new Error("uazapi_send_failed: rede: sem resposta do servidor");
+    });
+    await dispatchWahaEvent(
+      makeAdmin(cap, { aceitaComandos: true }),
+      { ...SESSION, waha_session_name: null, revogarNoCanal },
+      comando("#on"),
+      "req-on-outro-canal",
+    );
+
+    expect(revogarNoCanal).toHaveBeenCalledTimes(1);
+    expect(cap.insertedMessages).toHaveLength(1);
+    expect(vi.mocked(logger.warn).mock.calls.some(([m]) => String(m).includes("revogar o comando"))).toBe(true);
+  });
+
   it("LIGADO: '#on' que NÃO devolveu fica no chat (não revoga) e deixa log", async () => {
     const cap: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
     await dispatchWahaEvent(

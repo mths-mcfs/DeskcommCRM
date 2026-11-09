@@ -18,9 +18,16 @@ import { CHANNEL_PROVIDER_SOCIAL } from "./capabilities";
  * que verificasse teria que perguntar de quem é o payload — o `if (provider ===
  * ...)` que a doutrina existe para impedir.
  */
+import { randomUUID } from "node:crypto";
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { CANAIS_QUE_RESPONDEM_ANTES, CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
+import {
+  CANAIS_QUE_RESPONDEM_ANTES,
+  CHANNEL_PROVIDER_DATAFY,
+  CHANNEL_PROVIDER_UAZAPI,
+  CHANNEL_PROVIDER_ZERNIO,
+} from "./capabilities";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
 import { graphPartnerRefsDaSessao } from "./graph-parceiro/session";
 import {
@@ -33,6 +40,8 @@ import { lerEnvelopeMeta } from "./meta/envelope";
 import { ingestMetaAppContactSync, ingestMetaEcho, ingestMetaInbound } from "./meta/ingest";
 import { parseMetaWebhook } from "./meta/webhook";
 import { samePhone } from "./phone-variants";
+import { ingestUazapiEvento } from "./uazapi/ingest";
+import { eventoDoEnvelope, lerEnvelopeUazapi, tokenDoCorpoConfere } from "./uazapi/webhook";
 import {
   atualizarEspelhoDoTemplate,
   avisoDoEvento,
@@ -91,7 +100,11 @@ export function acceptsInboundWebhook(provider: string): boolean {
   // O canal Datafy é opcional da instalação: desligado, a entrada dele não
   // existe — nem para quem tem o token de uma sessão gravada antes.
   if (provider === CHANNEL_PROVIDER_DATAFY) return canalGraphParceiroLigado();
-  return provider === CHANNEL_PROVIDER_ZERNIO || provider === CHANNEL_PROVIDER_SOCIAL;
+  return (
+    provider === CHANNEL_PROVIDER_ZERNIO ||
+    provider === CHANNEL_PROVIDER_SOCIAL ||
+    provider === CHANNEL_PROVIDER_UAZAPI
+  );
 }
 
 /** Authenticate before archiving raw payloads. The handler repeats this guard for non-HTTP callers. */
@@ -101,6 +114,9 @@ export function verifyInboundWebhookSignature(provider: string, raw: string, hea
   if (provider === CHANNEL_PROVIDER_DATAFY) {
     return verifyGraphPartnerSignature(raw, headers.get(HEADER_ASSINATURA), headers.get(HEADER_TIMESTAMP), secret);
   }
+  // A UAZAPI não assina: o segredo desta sessão é a impressão do token da
+  // instância, e o corpo traz o token — confere um contra o outro.
+  if (provider === CHANNEL_PROVIDER_UAZAPI) return tokenDoCorpoConfere(raw, secret);
   return verifyZernioSignature(raw, headers.get("x-zernio-signature"), secret);
 }
 
@@ -199,6 +215,8 @@ export async function handleInboundWebhook(
       return zernioInbound(admin, input);
     case CHANNEL_PROVIDER_DATAFY:
       return datafyInbound(admin, input);
+    case CHANNEL_PROVIDER_UAZAPI:
+      return uazapiInbound(admin, input);
     default:
       // Token de um canal que não entra por aqui. É configuração trocada, não
       // ataque — mas processar seria ler o payload com o parser errado.
@@ -563,4 +581,35 @@ async function datafyInbound(
   }
 
   return { ok: true, body: { received: eventos.length, outcomes: desfechos } };
+}
+
+/**
+ * Entrada do canal UAZAPI (instância do próprio cliente).
+ *
+ * A sessão veio do token do CAMINHO; o corpo traz o token da instância, e ele
+ * tem de bater com o desta sessão (`tokenDoCorpoConfere`) — conferido de novo
+ * aqui porque esta função também é chamada fora da rota. Divergente é recusa:
+ * quem sabe a URL e não o token não injeta mensagem.
+ *
+ * O resto é `./uazapi/`: o contrato do fio e o evento do domínio em `webhook`,
+ * os efeitos em `ingest`.
+ */
+async function uazapiInbound(
+  admin: SupabaseClient,
+  input: InboundWebhookInput,
+): Promise<InboundWebhookOutcome> {
+  if (!verifyInboundWebhookSignature(input.session.provider, input.rawBody, input.headers, input.secret)) {
+    return { ok: false, code: "unauthorized", message: "bad_token" };
+  }
+  const leitura = lerEnvelopeUazapi(input.rawBody);
+  if (!leitura.ok) {
+    if (leitura.motivo === "json_invalido") return { ok: false, code: "invalid_json", message: "invalid_json" };
+    return {
+      ok: false,
+      code: "contrato_violado",
+      message: `payload fora do contrato do canal: ${leitura.campos.join(", ")}`,
+    };
+  }
+  const desfecho = await ingestUazapiEvento(admin, input.session, eventoDoEnvelope(leitura.envelope), randomUUID());
+  return { ok: true, body: { ...desfecho } };
 }

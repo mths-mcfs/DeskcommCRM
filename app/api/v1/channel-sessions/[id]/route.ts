@@ -28,6 +28,12 @@ import { loadAuthUser, mfaEmDivida } from "@/lib/auth/server";
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
 import { CHANNEL_PROVIDER_SOCIAL, CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
 import { PARTNER_CHANNEL_PROVIDER, desfazerNoProvedor } from "@/lib/channels/connect";
+import {
+  credencialQueSaiAoArquivar,
+  prepararDesligamentoDaInstanciaPropria,
+  type DesligamentoDaInstanciaPropria,
+  type PlanoDeDesligamento,
+} from "@/lib/channels/instancia-propria";
 import { resolverSaudeDaConexaoRemovida } from "@/lib/channels/health";
 import { sincronizarAvisoDePausa } from "@/lib/channels/central-de-pausa";
 import { desfazerWebhookDoNumero } from "@/lib/channels/meta/webhook-override";
@@ -40,6 +46,7 @@ import { getWahaClient, wahaFriendlyError } from "@/lib/waha/client";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { basePublicaDaInstalacao } from "@/lib/webhooks/url-publica";
 
 export const dynamic = "force-dynamic";
 
@@ -315,7 +322,7 @@ export async function GET(
  * Admin only. organization_id vem da sessão — nunca do path/body.
  */
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const supportDenied = await requireSupportWrite();
@@ -370,6 +377,10 @@ export async function DELETE(
    */
   let socialWebhook: "apagada" | "sem_integracao" | "falhou" | "nao_social" = "nao_social";
   let parceiro: "desfeito" | "nada_a_desfazer" | "sem_credencial" | "falhou" | "nao_parceiro" = "nao_parceiro";
+  /** O webhook da instância do próprio cliente, quando a conexão é uma (ver o ramo final). */
+  let instanciaPropria: DesligamentoDaInstanciaPropria = "nao_se_aplica";
+  /** Lido antes da escrita (o token sai da linha); executado só depois que ela deu certo. */
+  let desligamento: PlanoDeDesligamento = { estado: "nao_se_aplica" };
 
   if (session.provider === CHANNEL_PROVIDER_WAHA) {
     const waha = getWahaClient();
@@ -532,11 +543,38 @@ export async function DELETE(
       }
     }
 
+    // A instância do PRÓPRIO cliente (número por QR no servidor dele) segue
+    // entregando na URL que o token girado abaixo transforma em 404. Aqui só
+    // se LÊ o que o desligamento precisa (o token sai da linha no UPDATE); o
+    // `/webhook` desligado vai DEPOIS da escrita no banco dar certo — na ordem
+    // inversa, um UPDATE que falha deixava o servidor mudo e o CRM achando que
+    // está conectado. Para qualquer outro canal: `nao_se_aplica`, sem falar
+    // com ninguém.
+    try {
+      desligamento = await prepararDesligamentoDaInstanciaPropria(
+        createAdminClient(),
+        activeOrg.orgId,
+        id,
+        basePublicaDaInstalacao(req),
+      );
+    } catch (err) {
+      desligamento = { estado: "falhou" };
+      logger.warn("Falha ao preparar o desligamento do webhook da instância própria", {
+        requestId,
+        channel_session_id: id,
+        organization_id: activeOrg.orgId,
+        erro: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     // Revogação do canal oficial: a credencial some e a URL do webhook muda, então
     // o que a plataforma tem configurado do outro lado deixa de valer. Só faz
     // sentido no ramo que PRESERVA a linha — no hard delete ela some inteira.
     patch.meta_token_encrypted = null;
     patch.webhook_path_token = randomUUID().replace(/-/g, "");
+    // A instância do próprio cliente guarda o token dela na linha: sai junto
+    // (a linha arquivada fica, sem o token). O webhook é desligado depois da escrita.
+    Object.assign(patch, credencialQueSaiAoArquivar(session.provider));
   }
 
   // A linha da conexão pela instalação só é arquivada ou apagada pelo service
@@ -564,6 +602,11 @@ export async function DELETE(
       .eq("id", id);
     if (delErr) return fail("internal_error", delErr.message, 500, { requestId });
   }
+
+  // A conexão já saiu do CRM: agora sim desliga o webhook da instância própria.
+  // Best-effort — falhou, a conexão continua arquivada e o aviso vai para o log
+  // (dentro de `desligar`) e para a auditoria.
+  instanciaPropria = desligamento.estado === "pronto" ? await desligamento.desligar() : desligamento.estado;
 
   // ─── O AVISO NÃO FICA ÓRFÃO (issue #1023) ─────────────────────────────────
   //
@@ -620,6 +663,7 @@ export async function DELETE(
       webhook_override: webhookOverride,
       social_webhook: socialWebhook,
       parceiro,
+      instancia_propria: instanciaPropria,
       ...impact.history,
       ...impact.configuration,
     },

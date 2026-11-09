@@ -37,12 +37,31 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 
+import { CHANNEL_PROVIDER_UAZAPI } from "./capabilities";
+import { corpoSemCredencial } from "./uazapi/webhook";
+
 /** Cabeçalhos que NUNCA entram no arquivo, por menor que seja a chance. */
 // `asaas-access-token` (spec da cobrança do revendedor §2.4): o Asaas autentica
 // o webhook com um token ESTÁTICO no cabeçalho — é a credencial inteira, não uma
 // assinatura. A rota de cobrança nem grava cabeçalho; isto é o cinto para quando
 // alguém apontar o aviso do Asaas para uma rota de canal.
 const PROIBIDOS = ["authorization", "cookie", "x-api-key", "asaas-access-token"];
+
+/**
+ * O corpo como ele pode ser guardado. Quase todo canal autentica pelo
+ * cabeçalho (que `cabecalhosSeguros` já limpa) e o corpo vai inteiro. O número
+ * por QR numa instância própria manda o TOKEN da instância no corpo de todo
+ * evento — e `webhook_events_log` é legível por qualquer membro da organização.
+ * O valor sai antes da escrita; quem confere o token usa o corpo em memória.
+ */
+const LIMPEZA_DO_CORPO: Readonly<Record<string, (rawBody: string) => string>> = {
+  [CHANNEL_PROVIDER_UAZAPI]: corpoSemCredencial,
+};
+
+export function corpoParaArquivar(provider: string, rawBody: string): string {
+  const limpar = LIMPEZA_DO_CORPO[provider];
+  return limpar ? limpar(rawBody) : rawBody;
+}
 
 /**
  * Cabeçalhos sanitizados.
@@ -79,9 +98,10 @@ export async function abrirArquivoDoWebhook(
     headers: Headers;
   },
 ): Promise<string | null> {
+  const corpo = corpoParaArquivar(entrada.provider, entrada.rawBody);
   let parsed: Record<string, unknown> | null = null;
   try {
-    const v = JSON.parse(entrada.rawBody) as unknown;
+    const v = JSON.parse(corpo) as unknown;
     // Só objeto vai para a coluna `jsonb`: um payload que seja lista ou escalar
     // é legítimo em JSON e não cabe no formato desta coluna.
     parsed = v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
@@ -102,7 +122,7 @@ export async function abrirArquivoDoWebhook(
         provider: entrada.provider,
         http_method: "POST",
         headers: cabecalhosSeguros(entrada.headers),
-        raw_body: entrada.rawBody,
+        raw_body: corpo,
         payload_parsed: parsed,
         status: "received",
         attempts: 0,

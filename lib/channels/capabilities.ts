@@ -134,6 +134,34 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
   },
+  // A mesma auto-restrição do outro número por QR: é um aparelho pareado numa
+  // instância que o CLIENTE mantém (servidor gratuito, contratado ou próprio).
+  // Fala quando quiser, sem modelo nem janela, e o WhatsApp bane quem abusa —
+  // por isso `banRisk`, que arma ritmo, aquecimento e teto.
+  //
+  // As diferenças para o outro canal por QR são do que ESTA versão faz, não do
+  // que o servidor permite:
+  //
+  //  - `groups: "none"`. Grupo, newsletter e transmissão são ignorados na
+  //    entrada; prometer grupo aqui seria um botão que nada recebe.
+  //  - `alteraMensagemEnviada: false`. O adapter não edita; apagar para todos
+  //    existe só para a ingestão esconder o `#on`/`#off` digitado no celular.
+  //  - `phonebook: false`. O adapter não lê a agenda do aparelho.
+  //  - `voiceNote: "server-convert"`: o servidor aceita o áudio como nota de voz
+  //    (`type: "ptt"`) e converte, como o outro canal por QR.
+  uazapi: {
+    freeformOutsideWindow: true,
+    requiresTemplates: false,
+    canManageTemplates: false,
+    banRisk: true,
+    minIntervalMs: null,
+    voiceNote: "server-convert",
+    groups: "none",
+    costPerMessage: false,
+    alteraMensagemEnviada: false,
+    transmissao: false,
+    phonebook: false,
+  },
 };
 
 /**
@@ -165,6 +193,8 @@ export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
 export const CANAIS_QUE_RESPONDEM_ANTES: readonly string[] = [CHANNEL_PROVIDER_ZERNIO];
 /** Parceiro que espelha a Cloud API — canal opcional da instalação, desligado por padrão. */
 export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
+/** Número por QR numa instância UAZAPI do próprio cliente — sempre disponível. */
+export const CHANNEL_PROVIDER_UAZAPI: ChannelProvider = "uazapi";
 /** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
 
@@ -198,6 +228,7 @@ export const PROVIDERS_DE_MENSAGEM = [
   "zernio",
   "zernio_social",
   "datafy",
+  "uazapi",
 ] as const satisfies readonly ProviderDeMensagem[];
 
 /**
@@ -219,6 +250,7 @@ export const PROVIDERS_DE_TELEFONE = [
   "meta_cloud",
   "zernio",
   "datafy",
+  "uazapi",
 ] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social">[];
 
 /**

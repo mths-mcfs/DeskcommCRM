@@ -142,6 +142,8 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
       "zernio",
       "zernio_social",
       "datafy",
+      // Número por QR numa instância UAZAPI do próprio cliente (migration 9252).
+      "uazapi",
     ]);
     for (const provider of PROVIDERS_DE_MENSAGEM) {
       const caps = capabilitiesOf(provider);
