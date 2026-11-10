@@ -48,6 +48,9 @@ describe("ipEhEspecial — faixas que um webhook nunca deve alcançar", () => {
     ["IPv6 ULA", "fc00::1"],
     ["IPv6 link-local", "fe80::1"],
     ["IPv4-mapped escondendo loopback", "::ffff:127.0.0.1"],
+    // A forma que o `new URL` devolve para `[::ffff:127.0.0.1]` e `[::ffff:169.254.169.254]`.
+    ["IPv4-mapped em hex escondendo loopback", "::ffff:7f00:1"],
+    ["IPv4-mapped em hex escondendo o metadata", "::ffff:a9fe:a9fe"],
     ["NAT64 (alcança IPv4 privado)", "64:ff9b::a00:1"],
     ["lixo", "não-é-ip"],
   ])("recusa %s", (_rotulo, ip) => {
@@ -61,6 +64,7 @@ describe("ipEhEspecial — faixas que um webhook nunca deve alcançar", () => {
     ["logo ACIMA da 172.16/12", "172.32.0.1"],
     ["logo abaixo da 100.64/10", "100.63.255.255"],
     ["IPv6 público", "2606:4700:4700::1111"],
+    ["IPv4-mapped em hex de IP público", "::ffff:808:808"],
   ])("aceita %s", (_rotulo, ip) => {
     // Controle positivo: sem estes, uma função que devolvesse `true` sempre
     // passaria na metade de cima desta suíte.

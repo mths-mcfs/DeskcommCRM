@@ -263,6 +263,12 @@ interface Session {
    * (testes, caminhos internos) que não passam por uma linha de `channel_sessions`.
    */
   waha_session_name?: string | null;
+  /**
+   * Como apagar uma mensagem do celular quando a sessão NÃO é do WAHA (o outro
+   * número por QR que traduz para esta ingestão). Presente, ele vale no lugar
+   * do transporte do WAHA; ausente, nada muda para o WAHA.
+   */
+  revogarNoCanal?: (alvo: { chatId: string; messageId: string }) => Promise<void>;
 }
 
 /**
@@ -1407,6 +1413,18 @@ async function revogarComando(
   messageId: string | undefined,
 ): Promise<void> {
   if (!messageId) return;
+  if (session.revogarNoCanal) {
+    try {
+      await session.revogarNoCanal({ chatId, messageId });
+    } catch (err) {
+      logger.warn("[waha.ingest] não consegui revogar o comando do celular", {
+        organization_id: session.organization_id,
+        message_id: messageId,
+        detail: err instanceof Error ? err.message.slice(0, 160) : "erro",
+      });
+    }
+    return;
+  }
   const sessionName = session.waha_session_name;
   if (!sessionName) return;
   const client = getWahaClient();

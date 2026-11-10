@@ -64,6 +64,14 @@ export function ipEhEspecial(ip: string): boolean {
     // IPv4-mapped (::ffff:127.0.0.1) esconde um IPv4 — decide pelo IPv4 embutido.
     const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(normal);
     if (mapped?.[1]) return ipEhEspecial(mapped[1]);
+    // A MESMA coisa na forma hexadecimal — é a que o `new URL` devolve:
+    // `https://[::ffff:127.0.0.1]` vira `hostname` `[::ffff:7f00:1]`.
+    const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(normal);
+    if (mappedHex?.[1] && mappedHex[2]) {
+      const alto = parseInt(mappedHex[1], 16);
+      const baixo = parseInt(mappedHex[2], 16);
+      return ipEhEspecial(`${alto >> 8}.${alto & 255}.${baixo >> 8}.${baixo & 255}`);
+    }
     if (normal === "::" || normal === "::1") return true;
     if (normal.startsWith("fe80")) return true; // link-local
     if (/^f[cd]/.test(normal)) return true; // ULA fc00::/7
